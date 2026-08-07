@@ -1,5 +1,6 @@
 streamlit
-easyocr
+easyocr==1.7.2
+opencv-python-headless
 numpy
 Pillow
 PyMuPDF
