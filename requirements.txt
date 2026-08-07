@@ -1,12 +1,10 @@
 streamlit
 easyocr
-opencv-python-headless
 numpy
-pandas
 Pillow
 PyMuPDF
 python-docx
+pandas
 openpyxl
 torch
 torchvision
-openpyxl
