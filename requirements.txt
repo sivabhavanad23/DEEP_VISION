@@ -6,3 +6,15 @@ pillow
 python-docx
 pandas
 openpyxl
+streamlit
+easyocr
+opencv-python-headless
+numpy
+pandas
+Pillow
+PyMuPDF
+python-docx
+openpyxl
+torch
+torchvision
+spacy
