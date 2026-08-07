@@ -1,11 +1,21 @@
 venv/
 __pycache__/
 *.pyc
-
-output/
-uploads/
-
+.pytest_cache/
 .idea/
 .vscode/
-
 .env
+
+# Ignore files inside output and uploads, but keep the folders
+output/*
+!output/.gitkeep
+
+uploads/*
+!uploads/.gitkeep
+
+# Keep empty folders
+data/*
+!data/.gitkeep
+
+models/*
+!models/.gitkeep
