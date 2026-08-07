@@ -1,94 +1,146 @@
+import os
+import json
 import tempfile
-import pandas as pd
+
 import streamlit as st
+from PIL import Image
 
-from utils.file_handler import get_file_type, preview_image
-from utils.ocr import extract_text_from_file
-from utils.classifier import classify_document
-from utils.extractor import extract_information
-from utils.exporter import export_json, export_csv, export_excel
-
+# ---------------------------
+# Page Config
+# ---------------------------
 st.set_page_config(
-    page_title="DeepVision",
+    page_title="DeepVision OCR",
     page_icon="📄",
     layout="wide"
 )
 
+# ---------------------------
+# Dependency Check
+# ---------------------------
+try:
+    import cv2
+    cv2_status = f"✅ OpenCV {cv2.__version__} Loaded Successfully"
+except Exception as e:
+    st.error(f"❌ OpenCV Import Error:\n\n{e}")
+    st.stop()
+
+# ---------------------------
+# Import Project Modules
+# ---------------------------
+try:
+    from utils.ocr import extract_text_from_file
+    from utils.extractor import extract_information
+    from utils.classifier import classify_document
+except Exception as e:
+    st.error(f"❌ Project Import Error:\n\n{e}")
+    st.stop()
+
+# ---------------------------
+# Sidebar
+# ---------------------------
+st.sidebar.title("📄 DeepVision")
+st.sidebar.write("OCR Intelligent Document Extraction")
+st.sidebar.success(cv2_status)
+
+# ---------------------------
+# Main Title
+# ---------------------------
 st.title("📄 DeepVision")
 st.subheader("OCR Intelligent Document Extraction")
 
 uploaded_file = st.file_uploader(
     "Upload a document",
-    type=["jpg", "jpeg", "png", "pdf", "docx", "txt"]
+    type=[
+        "png",
+        "jpg",
+        "jpeg",
+        "pdf",
+        "docx",
+        "txt",
+        "csv",
+        "json"
+    ]
 )
 
-if uploaded_file:
+# ---------------------------
+# Upload
+# ---------------------------
+if uploaded_file is not None:
 
-    st.success("File uploaded successfully!")
+    extension = os.path.splitext(uploaded_file.name)[1]
 
-    file_type = get_file_type(uploaded_file)
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=extension
+    ) as temp_file:
 
-    if file_type in ["jpg", "jpeg", "png"]:
-        image = preview_image(uploaded_file)
-        st.image(image, caption="Uploaded Image", use_container_width=True)
+        temp_file.write(uploaded_file.read())
+        file_path = temp_file.name
 
+    st.success("✅ File Uploaded Successfully")
+
+    # Show image preview
+    if extension.lower() in [".png", ".jpg", ".jpeg"]:
+        image = Image.open(file_path)
+        st.image(
+            image,
+            caption="Uploaded Image",
+            use_container_width=True
+        )
+
+    # OCR
     if st.button("Extract Text"):
 
-        suffix = "." + file_type if file_type else ".tmp"
+        with st.spinner("Performing OCR..."):
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(uploaded_file.getbuffer())
-            temp_path = tmp.name
-
-        with st.spinner("Extracting text..."):
-            text = extract_text_from_file(temp_path, file_type)
+            text = extract_text_from_file(file_path)
 
         st.success("Extraction Completed")
 
         st.subheader("Extracted Text")
-        st.text_area("", text, height=300)
+
+        st.text_area(
+            "OCR Output",
+            value=text,
+            height=300
+        )
 
         document_type = classify_document(text)
 
         st.subheader("Document Type")
         st.info(document_type)
 
-        info = extract_information(text)
+        information = extract_information(text)
 
         st.subheader("Extracted Information")
 
-        df = pd.DataFrame(
-            list(info.items()),
-            columns=["Field", "Value"]
-        )
-
-        st.table(df)
+        st.table({
+            "Field": list(information.keys()),
+            "Value": list(information.values())
+        })
 
         st.subheader("JSON Output")
-        st.code(export_json(info), language="json")
 
-        col1, col2, col3 = st.columns(3)
+        st.code(
+            json.dumps(
+                information,
+                indent=4
+            ),
+            language="json"
+        )
 
-        with col1:
-            st.download_button(
-                "Download JSON",
-                export_json(info),
-                "output.json",
-                "application/json"
-            )
+        st.download_button(
+            label="📥 Download Extracted Text",
+            data=text,
+            file_name="Extracted_Text.txt",
+            mime="text/plain"
+        )
 
-        with col2:
-            st.download_button(
-                "Download CSV",
-                export_csv(info),
-                "output.csv",
-                "text/csv"
-            )
+    if os.path.exists(file_path):
+        os.remove(file_path)
 
-        with col3:
-            st.download_button(
-                "Download Excel",
-                export_excel(info),
-                "output.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+# ---------------------------
+# Footer
+# ---------------------------
+st.markdown("---")
+st.caption("Developed by Siva Bhavana Dachepalli")
