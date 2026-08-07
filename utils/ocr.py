@@ -2,25 +2,16 @@ import os
 import tempfile
 from pathlib import Path
 
+import cv2
+import easyocr
+import fitz  # PyMuPDF
 import numpy as np
 from PIL import Image
+from docx import Document
 
-try:
-    import easyocr
-except ImportError:
-    easyocr = None
-
-try:
-    import fitz  # PyMuPDF
-except ImportError:
-    fitz = None
-
-try:
-    from docx import Document
-except ImportError:
-    Document = None
-
-
+# -----------------------------
+# Lazy Load EasyOCR
+# -----------------------------
 reader = None
 
 
@@ -28,27 +19,58 @@ def get_reader():
     global reader
 
     if reader is None:
-        if easyocr is None:
-            raise Exception("EasyOCR is not installed.")
-
-        reader = easyocr.Reader(["en"], gpu=False)
+        reader = easyocr.Reader(
+            ["en"],
+            gpu=False,
+            download_enabled=True
+        )
 
     return reader
 
 
+# -----------------------------
+# Image Preprocessing
+# -----------------------------
 def preprocess_image(image_path):
+    """
+    Improve OCR accuracy.
+    """
+
     image = Image.open(image_path).convert("RGB")
+
     image = image.resize(
         (image.width * 2, image.height * 2),
         Image.Resampling.LANCZOS
     )
-    return np.array(image)
+
+    image = np.array(image)
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+
+    gray = cv2.equalizeHist(gray)
+
+    _, thresh = cv2.threshold(
+        gray,
+        0,
+        255,
+        cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+
+    return thresh
 
 
+# -----------------------------
+# Compatibility Function
+# -----------------------------
 def extract_text(image_path):
     return extract_text_from_file(image_path)
 
 
+# -----------------------------
+# OCR Main Function
+# -----------------------------
 def extract_text_from_file(file_path, file_type=None):
 
     extension = Path(file_path).suffix.lower()
@@ -58,8 +80,9 @@ def extract_text_from_file(file_path, file_type=None):
 
     try:
 
-        # ---------------- Images ---------------- #
-
+        # =============================
+        # IMAGE
+        # =============================
         if extension in [
             ".png",
             ".jpg",
@@ -69,10 +92,10 @@ def extract_text_from_file(file_path, file_type=None):
             ".tiff"
         ]:
 
-            image = preprocess_image(file_path)
+            processed = preprocess_image(file_path)
 
             results = get_reader().readtext(
-                image,
+                processed,
                 detail=1,
                 paragraph=True
             )
@@ -80,19 +103,17 @@ def extract_text_from_file(file_path, file_type=None):
             if len(results) == 0:
                 return "No text detected."
 
-            text = ""
+            text = "\n".join(
+                item[1]
+                for item in results
+            )
 
-            for r in results:
-                text += r[1] + "\n"
+            return text
 
-            return text.strip()
-
-        # ---------------- PDF ---------------- #
-
+        # =============================
+        # PDF
+        # =============================
         elif extension == ".pdf":
-
-            if fitz is None:
-                return "PyMuPDF not installed."
 
             pdf = fitz.open(file_path)
 
@@ -109,16 +130,16 @@ def extract_text_from_file(file_path, file_type=None):
 
                 pix.save(temp.name)
 
-                image = preprocess_image(temp.name)
+                processed = preprocess_image(temp.name)
 
                 results = get_reader().readtext(
-                    image,
+                    processed,
                     detail=1,
                     paragraph=True
                 )
 
-                for r in results:
-                    final_text += r[1] + "\n"
+                for item in results:
+                    final_text += item[1] + "\n"
 
                 os.remove(temp.name)
 
@@ -129,22 +150,23 @@ def extract_text_from_file(file_path, file_type=None):
 
             return final_text.strip()
 
-        # ---------------- DOCX ---------------- #
-
+        # =============================
+        # DOCX
+        # =============================
         elif extension == ".docx":
 
-            if Document is None:
-                return "python-docx not installed."
+            document = Document(file_path)
 
-            doc = Document(file_path)
-
-            return "\n".join(
-                p.text
-                for p in doc.paragraphs
+            text = "\n".join(
+                para.text
+                for para in document.paragraphs
             )
 
-        # ---------------- Text ---------------- #
+            return text.strip()
 
+        # =============================
+        # TEXT FILES
+        # =============================
         elif extension in [
             ".txt",
             ".csv",
@@ -157,11 +179,12 @@ def extract_text_from_file(file_path, file_type=None):
                 file_path,
                 "r",
                 encoding="utf-8"
-            ) as f:
-                return f.read()
+            ) as file:
+
+                return file.read()
 
         else:
-            return "Unsupported file."
+            return "Unsupported file type."
 
     except Exception as e:
         return f"OCR Error: {str(e)}"
