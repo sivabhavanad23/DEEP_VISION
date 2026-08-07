@@ -2,39 +2,49 @@ import os
 import tempfile
 from pathlib import Path
 
-import cv2
-import easyocr
-import fitz  # PyMuPDF
 import numpy as np
 from PIL import Image
-from docx import Document
 
-# -----------------------------
-# Lazy Load EasyOCR
-# -----------------------------
+try:
+    import easyocr
+except ImportError:
+    easyocr = None
+
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
+
+try:
+    from docx import Document
+except ImportError:
+    Document = None
+
 reader = None
 
 
 def get_reader():
     global reader
 
+    print("========== LOADING OCR READER ==========")
+
     if reader is None:
+        if easyocr is None:
+            raise Exception("EasyOCR is not installed.")
+
         reader = easyocr.Reader(
             ["en"],
             gpu=False,
-            download_enabled=True
+            verbose=True
         )
+
+    print("========== OCR READER READY ==========")
 
     return reader
 
 
-# -----------------------------
-# Image Preprocessing
-# -----------------------------
 def preprocess_image(image_path):
-    """
-    Improve OCR accuracy.
-    """
+    print("Preprocessing image...")
 
     image = Image.open(image_path).convert("RGB")
 
@@ -43,34 +53,13 @@ def preprocess_image(image_path):
         Image.Resampling.LANCZOS
     )
 
-    image = np.array(image)
-
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
-
-    gray = cv2.equalizeHist(gray)
-
-    _, thresh = cv2.threshold(
-        gray,
-        0,
-        255,
-        cv2.THRESH_BINARY + cv2.THRESH_OTSU
-    )
-
-    return thresh
+    return np.array(image)
 
 
-# -----------------------------
-# Compatibility Function
-# -----------------------------
 def extract_text(image_path):
     return extract_text_from_file(image_path)
 
 
-# -----------------------------
-# OCR Main Function
-# -----------------------------
 def extract_text_from_file(file_path, file_type=None):
 
     extension = Path(file_path).suffix.lower()
@@ -78,11 +67,13 @@ def extract_text_from_file(file_path, file_type=None):
     if file_type:
         extension = "." + file_type.split("/")[-1].lower()
 
+    print(f"Processing: {file_path}")
+    print(f"Extension: {extension}")
+
     try:
 
-        # =============================
-        # IMAGE
-        # =============================
+        # ---------------- IMAGE ---------------- #
+
         if extension in [
             ".png",
             ".jpg",
@@ -92,34 +83,51 @@ def extract_text_from_file(file_path, file_type=None):
             ".tiff"
         ]:
 
-            processed = preprocess_image(file_path)
+            print("STEP 1 - Image detected")
 
-            results = get_reader().readtext(
-                processed,
+            image = preprocess_image(file_path)
+
+            print("STEP 2 - Image preprocessed")
+
+            reader = get_reader()
+
+            print("STEP 3 - Starting OCR")
+
+            results = reader.readtext(
+                image,
                 detail=1,
                 paragraph=True
             )
 
-            if len(results) == 0:
+            print("STEP 4 - OCR Finished")
+
+            if not results:
                 return "No text detected."
 
-            text = "\n".join(
-                item[1]
-                for item in results
-            )
+            text = "\n".join([r[1] for r in results])
+
+            print("Characters extracted:", len(text))
 
             return text
 
-        # =============================
-        # PDF
-        # =============================
+        # ---------------- PDF ---------------- #
+
         elif extension == ".pdf":
+
+            if fitz is None:
+                return "PyMuPDF is not installed."
 
             pdf = fitz.open(file_path)
 
             final_text = ""
 
-            for page in pdf:
+            reader = get_reader()
+
+            for page_number in range(len(pdf)):
+
+                print(f"Reading PDF Page {page_number + 1}")
+
+                page = pdf.load_page(page_number)
 
                 pix = page.get_pixmap(dpi=300)
 
@@ -130,16 +138,16 @@ def extract_text_from_file(file_path, file_type=None):
 
                 pix.save(temp.name)
 
-                processed = preprocess_image(temp.name)
+                image = preprocess_image(temp.name)
 
-                results = get_reader().readtext(
-                    processed,
+                results = reader.readtext(
+                    image,
                     detail=1,
                     paragraph=True
                 )
 
-                for item in results:
-                    final_text += item[1] + "\n"
+                for r in results:
+                    final_text += r[1] + "\n"
 
                 os.remove(temp.name)
 
@@ -150,23 +158,24 @@ def extract_text_from_file(file_path, file_type=None):
 
             return final_text.strip()
 
-        # =============================
-        # DOCX
-        # =============================
+        # ---------------- DOCX ---------------- #
+
         elif extension == ".docx":
 
-            document = Document(file_path)
+            if Document is None:
+                return "python-docx is not installed."
+
+            doc = Document(file_path)
 
             text = "\n".join(
                 para.text
-                for para in document.paragraphs
+                for para in doc.paragraphs
             )
 
-            return text.strip()
+            return text
 
-        # =============================
-        # TEXT FILES
-        # =============================
+        # ---------------- TEXT FILES ---------------- #
+
         elif extension in [
             ".txt",
             ".csv",
@@ -179,12 +188,18 @@ def extract_text_from_file(file_path, file_type=None):
                 file_path,
                 "r",
                 encoding="utf-8"
-            ) as file:
+            ) as f:
 
-                return file.read()
+                return f.read()
 
         else:
-            return "Unsupported file type."
+            return f"Unsupported file type: {extension}"
 
     except Exception as e:
+
+        import traceback
+
+        print("========== OCR ERROR ==========")
+        traceback.print_exc()
+
         return f"OCR Error: {str(e)}"
