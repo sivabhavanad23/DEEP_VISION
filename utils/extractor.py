@@ -1,67 +1,43 @@
 import re
-import spacy
-
-nlp = spacy.load("en_core_web_sm")
-
 
 def extract_information(text):
+    info = {
+        "Email": "",
+        "Phone": "",
+        "Date": "",
+        "Amount": ""
+    }
 
-    doc = nlp(text)
-
-    data = {}
-
-    # -------------------------
-    # PERSON NAME
-    # -------------------------
-
-    for ent in doc.ents:
-
-        if ent.label_ == "PERSON":
-            data["Name"] = ent.text
-            break
-
-    # -------------------------
-    # EMAIL
-    # -------------------------
-
-    email = re.findall(
+    # Email
+    email = re.search(
         r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
         text
     )
+    if email:
+        info["Email"] = email.group()
 
-    data["Email"] = email[0] if email else ""
-
-    # -------------------------
-    # PHONE
-    # -------------------------
-
-    phone = re.findall(
-        r"\+?\d[\d\s\-]{8,15}",
+    # Phone
+    phone = re.search(
+        r"\b\d{10}\b",
         text
     )
+    if phone:
+        info["Phone"] = phone.group()
 
-    data["Phone"] = phone[0] if phone else ""
-
-    # -------------------------
-    # DATE
-    # -------------------------
-
-    date = re.findall(
-        r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}",
+    # Date
+    date = re.search(
+        r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",
         text
     )
+    if date:
+        info["Date"] = date.group()
 
-    data["Date"] = date[0] if date else ""
-
-    # -------------------------
-    # AMOUNT
-    # -------------------------
-
-    amount = re.findall(
-        r"(?:Rs\.?|INR)?\s?\d+(?:,\d{3})*(?:\.\d{2})?",
+    # Amount
+    amount = re.search(
+        r"₹?\s?\d+(?:,\d{3})*(?:\.\d{2})?",
         text
     )
+    if amount:
+        info["Amount"] = amount.group()
 
-    data["Amount"] = amount[0] if amount else ""
-
-    return data
+    return info
